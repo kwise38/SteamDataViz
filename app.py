@@ -135,36 +135,82 @@ with tab1:
     if clustering_method in ['kmeans', 'agglomerative'] and 'n_clusters' in params:
         top_genre_comparison = compare_silhouette_with_top_genres(X, labels, df, params['n_clusters'])
 
+
+
     sil_score = calculate_silhouette_score(X_2d, labels)
     # Compute cluster purity
     purity_score, cluster_info = calculate_cluster_purity_with_majority_genre(labels, df_genres_onehot, df_tags_onehot)
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Games", f"{len(df):,}")
-    with col2:
-        unique_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        st.metric("Clusters Found", unique_clusters)
-    with col3:
-        outliers = np.sum(labels == -1)
-        st.metric("Outliers", outliers)
-    with col4:
-        if sil_score is not None:
-            st.metric("Silhouette Score", f"{sil_score:.3f}")
-        else:
-            avg_per_cluster = len(df) / unique_clusters if unique_clusters > 0 else 0
-            st.metric("Avg per Cluster", f"{avg_per_cluster:.0f}")
+    selected_game_name = st.session_state.get('selected_game', None)
+    highlight_name = selected_game_name if selected_game_name else ''
+    title = f"{dr_method.upper()} + {clustering_method.upper()}"
+    fig = plot_clusters(df, X_2d, labels, title, search_term=highlight_name)
+    fig.update_layout(
+        height=700,
+        template='plotly_white',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(size=12),
+        title_font_size=20,
+        title_x=0.5
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Display purity
+    # Purity Section
+    st.markdown("### Cluster Purity Analysis")
     if purity_score is not None:
-        st.metric("Cluster Purity", f"{purity_score:.3f}")
+        st.metric("Overall Cluster Purity", f"{purity_score:.3f}")
+        st.caption("Measures how well clusters align with genres/tags (higher = better cohesion).")
 
-    if cluster_info:
-        cluster_purity_df = pd.DataFrame([
-            {"Cluster": c, "Purity": info['purity'], "Majority Genre": info['majority_genre'], "Majority Tags": info['majority_tags']}
-            for c, info in cluster_info.items()
-        ]).sort_values("Cluster")
-        st.dataframe(cluster_purity_df, use_container_width=True)
+        if cluster_info:
+            # Dataframe with styling
+            cluster_purity_df = pd.DataFrame([
+                {"Cluster": c, "Purity": info['purity'], "Majority Genre": info['majority_genre'], "Majority Tags": info['majority_tags']}
+                for c, info in cluster_info.items()
+            ]).sort_values("Cluster")
+            # Style the dataframe (highlight high purity)
+            def style_purity(row):
+                color = 'background-color: palegreen' if row['Purity'] > 0.7 else ''
+                return [color] * len(row)
+            styled_df = cluster_purity_df.style.apply(style_purity, axis=1).format({'Purity': '{:.3f}'})
+            st.dataframe(styled_df, use_container_width=True)
+
+            # Add bar chart for visualization
+            fig_purity = px.bar(cluster_purity_df, x='Cluster', y='Purity', 
+                                 color='Majority Genre', title="Purity per Cluster",
+                                 labels={'Purity': 'Purity Score'}, height=400)
+            fig_purity.update_layout(template='plotly_white')
+            st.plotly_chart(fig_purity, use_container_width=True)
+
+        # Explanation Expander
+        with st.expander("What is Cluster Purity?"):
+            st.markdown("""
+            Cluster purity evaluates how 'pure' each cluster is in terms of genres or tags:
+            - For each cluster, we find the majority genre (the most common one among games in that cluster, based on one-hot encoding).
+            - Purity = (number of games with the majority genre) / (total games in cluster).
+            - Overall purity is the weighted average across clusters.
+            - **Range**: 0 (random mix) to 1 (all games in a cluster share the same genre).
+            - This helps check if clusters group similar games better than random.
+            - Green: "High Purity" of > 0.7
+            """)
+
+        # Dropdown for Genres Used (interactivity)
+        all_genres = sorted(set(col.split('_')[1] for col in df_genres_onehot.columns if col.startswith('genres_')))
+        selected_genre = st.selectbox("Explore Genres Used in Purity Calculation", ['All'] + all_genres)
+        if selected_genre != 'All':
+            matching_clusters = cluster_purity_df[cluster_purity_df['Majority Genre'] == selected_genre]['Cluster'].tolist()
+            if matching_clusters:
+                st.write(f"Clusters where '{selected_genre}' is majority: {', '.join(map(str, matching_clusters))}")
+                # Optional: List sample games
+                sample_games = df[(df['cluster'].isin(matching_clusters)) & df['genres'].apply(lambda g: selected_genre in g)]['name'].head(5).tolist()
+                st.write(f"Sample games: {', '.join(sample_games)}")
+            else:
+                st.info(f"No clusters have '{selected_genre}' as majority.")
+        else:
+            st.write(f"All genres used: {', '.join(all_genres)}")
+
+    else:
+        st.info("Purity score unavailable (e.g., insufficient clusters or data).")
     st.markdown("---")
 
     if top_genre_comparison:
@@ -178,6 +224,12 @@ with tab1:
             st.metric("Better Separation", top_genre_comparison['better'])
         st.caption("Higher silhouette = better cluster separation/cohesion. Compares ML clusters to top genres + 'Other'.")
 
+        with st.expander(f"Top {len(top_genre_comparison['top_genres_used'])} Genres Used"):
+            if top_genre_comparison['top_genres_used']:
+                genre_list_md = "\n".join([f"- {genre}" for genre in top_genre_comparison['top_genres_used']])
+                st.markdown(genre_list_md)
+            else:
+                st.info("No top genres identified.")
         with st.expander("Details on Silhouette Score and Methodology"):
             st.markdown("""
             #### What is the Silhouette Score?
@@ -199,21 +251,6 @@ with tab1:
             """.format(top_genres=", ".join(top_genre_comparison['top_genres_used'])))
     else:
         st.info("Top-genre comparison available only for KMeans/Agglomerative clustering.")
-
-    selected_game_name = st.session_state.get('selected_game', None)
-    highlight_name = selected_game_name if selected_game_name else ''
-    title = f"{dr_method.upper()} + {clustering_method.upper()}"
-    fig = plot_clusters(df, X_2d, labels, title, search_term=highlight_name)
-    fig.update_layout(
-        height=700,
-        template='plotly_white',
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(size=12),
-        title_font_size=20,
-        title_x=0.5
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
     st.markdown("## Find Similar Games")
