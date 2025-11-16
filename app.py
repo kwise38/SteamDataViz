@@ -12,7 +12,6 @@ import streamlit as st
 from analysis import (SHAP_AVAILABLE, _calculate_surrogate_importance_linear,
                       calculate_cluster_purity_with_majority_genre,
                       calculate_silhouette_score,
-                      compare_silhouette_with_genres,
                       compare_silhouette_with_top_genres, compute_clustering,
                       compute_dr, get_feature_importance_pca,
                       train_genre_classifier)
