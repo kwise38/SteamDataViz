@@ -176,9 +176,27 @@ with tab1:
             st.metric("Top-Genre Silhouette", f"{top_genre_comparison['genre_silhouette']:.3f}")
         with col_comp3:
             st.metric("Better Separation", top_genre_comparison['better'])
-        st.caption(f"Compares ML clusters to top {len(top_genre_comparison['top_genres_used'])} genres + 'Other'. Higher silhouette = better.")
-        with st.expander("Top Genres Used"):
-            st.write(top_genre_comparison['top_genres_used'])
+        st.caption("Higher silhouette = better cluster separation/cohesion. Compares ML clusters to top genres + 'Other'.")
+
+        with st.expander("Details on Silhouette Score and Methodology"):
+            st.markdown("""
+            #### What is the Silhouette Score?
+            The silhouette score is a metric used to evaluate the quality of clusters. It measures how similar each data point is to its own cluster compared to other clusters:
+            - **Range**: From -1 (poor clustering, points better fit neighboring clusters) to 1 (excellent clustering, well-separated and cohesive).
+            - **Interpretation**: A score above 0.5 indicates strong structure; near 0 means overlapping clusters; negative means misassignment.
+            - **Why it matters**: Higher scores suggest the clusters are more meaningful and distinct in the feature space (e.g., based on game descriptions, tags, etc.).
+
+            #### Methodology for Comparison
+            To assess if our computed clusters (from ML methods like KMeans) are 'better' than genre-based groupings, we create a fair pseudo-clustering from genres:
+            1. **Select top genres**: Based on the number of clusters (N) in your selection, we pick the top (N-1) most frequent genres across all games (by counting occurrences in the 'genres' lists).
+            2. **Assign games**: For each game, scan its genres list and assign it to the first matching top genre. If no match, assign to 'Other' (ensuring exactly N pseudo-clusters).
+            3. **Compute scores**: Calculate silhouette for both the ML clusters and this genre-based assignment using the same feature matrix.
+            4. **Compare**: If the ML score is higher, the computed clusters provide better separation than simple genre groupings.
+
+            This approach handles multi-label genres by prioritizing the first match, making the comparison aligned in scale (same number of clusters). Top genres used: {top_genres}.
+
+            Note: This is available only for fixed-cluster methods (KMeans/Agglomerative). For DBSCAN, use the basic comparison if needed.
+            """.format(top_genres=", ".join(top_genre_comparison['top_genres_used'])))
     else:
         st.info("Top-genre comparison available only for KMeans/Agglomerative clustering.")
 
